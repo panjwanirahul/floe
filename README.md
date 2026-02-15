@@ -10,12 +10,13 @@ You define the playlists. You map your schedule. Floe handles the rest every nig
 - Uses Claude to analyze each song's energy, tempo, and mood against your schedule
 - Categorizes songs into your custom playlists (you create as many as you want)
 - Caches results so the same song isn't re-analyzed
+- Auto-refreshes YouTube Music auth from your Chrome browser cookies
 - Runs daily via cron — set it and forget it
 
 ## Prerequisites
 
 - Python 3.10+
-- A YouTube Music account
+- Google Chrome with YouTube Music logged in
 - An [Anthropic API key](https://console.anthropic.com/)
 
 ## Running locally
@@ -38,17 +39,11 @@ cp config/.env.example config/.env
 
 Open `config/.env` and paste your Anthropic API key.
 
-**3. Authenticate with YouTube Music**
+**3. YouTube Music auth**
 
-```bash
-ytmusicapi oauth
-```
+No manual setup needed. Floe automatically extracts cookies from Chrome every time it runs. Just make sure you're logged into [YouTube Music](https://music.youtube.com) in Chrome.
 
-This opens a browser for Google OAuth. Once done, move the generated file:
-
-```bash
-mv oauth.json config/headers_auth.json
-```
+On macOS, you'll get a Keychain prompt the first time — click **Always Allow** so it doesn't ask again.
 
 **4. Launch Floe**
 
@@ -86,7 +81,7 @@ floe/
 │   ├── config.py              # Config I/O
 │   ├── templates/             # Setup + dashboard pages
 │   └── services/
-│       ├── ytmusic.py         # YouTube Music API wrapper
+│       ├── ytmusic.py         # YT Music API + auto cookie refresh
 │       └── categorizer.py     # Claude-powered song analysis
 ├── config/
 │   └── .env.example           # API key template
@@ -99,4 +94,5 @@ floe/
 - **ytmusicapi** — YouTube Music API
 - **anthropic** — Claude AI for categorization
 - **flask** — Minimal web UI
+- **pycookiecheat** — Auto-refresh Chrome cookies for YT Music auth
 - **python-dotenv** — Config management
