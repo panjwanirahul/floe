@@ -1,14 +1,65 @@
 """YouTube Music API wrapper for fetching history and managing playlists."""
 
+import hashlib
+import json
 import logging
+import math
+import time
+from pathlib import Path
 
 from ytmusicapi import YTMusic
 
 logger = logging.getLogger(__name__)
 
 
+def refresh_browser_cookies(auth_file: str) -> bool:
+    """Extract fresh cookies from Chrome and write the auth file.
+    Returns True if successful, False if cookies couldn't be refreshed.
+    """
+    try:
+        from pycookiecheat import chrome_cookies
+    except ImportError:
+        logger.warning("pycookiecheat not installed, skipping cookie refresh")
+        return False
+
+    try:
+        cookies = chrome_cookies("https://music.youtube.com")
+        if not cookies.get("SAPISID"):
+            logger.warning("No SAPISID cookie found - are you logged into YouTube Music in Chrome?")
+            return False
+
+        # Build SAPISIDHASH authorization
+        sapisid = cookies["SAPISID"]
+        origin = "https://music.youtube.com"
+        ts = str(math.floor(time.time()))
+        sha1 = hashlib.sha1(f"{ts} {sapisid} {origin}".encode()).hexdigest()
+
+        headers = {
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "accept": "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "content-type": "application/json",
+            "x-goog-authuser": "0",
+            "x-origin": origin,
+            "origin": origin,
+            "cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+            "authorization": f"SAPISIDHASH {ts}_{sha1}",
+        }
+
+        Path(auth_file).write_text(json.dumps(headers, indent=2))
+        logger.info("Refreshed browser cookies for YT Music auth")
+        return True
+
+    except Exception as e:
+        logger.warning("Cookie refresh failed: %s", e)
+        return False
+
+
 class YTMusicService:
     def __init__(self, auth_file: str):
+        # Try refreshing cookies from Chrome first
+        refresh_browser_cookies(auth_file)
+
         self.yt = YTMusic(auth_file)
         logger.info("YTMusic client initialized")
 
