@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title_suffix %} - Dashboard{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:baseline">
+    <div>
+        <h1>Floe</h1>
+        <p class="subtitle" style="margin-bottom:24px">Your playlists, automated</p>
+    </div>
+    <a href="/setup" class="muted" style="text-decoration:none">Reconfigure</a>
+</div>
+
+<div id="msg"></div>
+
+{% if not last_report %}
+<div class="alert alert-info">
+    Playlists created! Run your first sync to start organizing your music.
+</div>
+{% endif %}
+
+<!-- Playlists -->
+<section>
+    <h2>Playlists</h2>
+    <div class="grid">
+        {% for p in playlists %}
+        <div class="stat">
+            <h3>{{ p.name }}</h3>
+            <div class="n">{{ p.song_count }}</div>
+            <div class="d">{{ p.description }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Sync -->
+<section>
+    <h2>Sync</h2>
+    <div class="card">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn-p" id="sync-btn" onclick="doSync()">
+                {% if sync_running %}<span class="spinner"></span> Syncing...{% else %}Sync Now{% endif %}
+            </button>
+            <select id="sync-lim" style="max-width:180px">
+                <option value="50">~50 songs</option>
+                <option value="100" selected>~100 songs</option>
+                <option value="200">~200 songs</option>
+                <option value="0">All available</option>
+            </select>
+        </div>
+        <div id="sync-msg" class="mt"></div>
+        {% if last_report %}
+        <p class="muted mt">
+            Last sync: {{ last_report.date[:16] }} &middot;
+            {{ last_report.songs_fetched }} fetched &middot;
+            {{ last_report.total_added }} added
+            {% if last_report.breakdown %}
+                {% for key, info in last_report.breakdown.items() %}
+                    &middot; {{ info.name }}: +{{ info.added }}
+                {% endfor %}
+            {% endif %}
+        </p>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Schedule -->
+<section>
+    <h2>Schedule</h2>
+    {% if schedule.activities %}
+    {% for a in schedule.activities %}
+    <div style="margin-bottom:6px">
+        <strong>{{ a.name }}</strong>
+        <span class="muted">
+            &rarr; {{ a.playlist }} &middot;
+            {{ a.days | join(', ') }} &middot;
+            {% for w in a.windows %}{{ w.start }}-{{ w.end }}{% if not loop.last %}, {% endif %}{% endfor %}
+        </span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="muted">No schedule configured.</p>
+    {% endif %}
+
+    <button class="mt" onclick="tog('act-form')">+ Add activity</button>
+
+    <div id="act-form" class="hidden card mt">
+        <div class="fg">
+            <label>Activity name</label>
+            <input id="aa-name" placeholder="e.g. Yoga">
+        </div>
+        <div class="fg">
+            <label>Days</label>
+            <div class="days" id="aa-days">
+                <div class="day" data-d="mon" onclick="togDay(this)">Mon</div>
+                <div class="day" data-d="tue" onclick="togDay(this)">Tue</div>
+                <div class="day" data-d="wed" onclick="togDay(this)">Wed</div>
+                <div class="day" data-d="thu" onclick="togDay(this)">Thu</div>
+                <div class="day" data-d="fri" onclick="togDay(this)">Fri</div>
+                <div class="day" data-d="sat" onclick="togDay(this)">Sat</div>
+                <div class="day" data-d="sun" onclick="togDay(this)">Sun</div>
+            </div>
+        </div>
+        <div class="fg">
+            <label>Time</label>
+            <div class="tw">
+                <input type="time" id="aa-start" value="09:00" style="max-width:120px">
+                <span>to</span>
+                <input type="time" id="aa-end" value="10:00" style="max-width:120px">
+            </div>
+        </div>
+        <div class="fg">
+            <label>Playlist</label>
+            <select id="aa-pl">
+                {% for p in playlists %}
+                <option value="{{ p.key }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button class="btn-p" onclick="submitActivity()">Add</button>
+    </div>
+</section>
+
+<!-- Add playlist -->
+<section>
+    <h2>Add Playlist</h2>
+    <button onclick="tog('pl-form')">+ New playlist</button>
+    <div id="pl-form" class="hidden card mt">
+        <div class="row">
+            <div style="max-width:72px">
+                <label>Emoji</label>
+                <input id="ap-emoji" placeholder="🎵" maxlength="4">
+            </div>
+            <div>
+                <label>Name</label>
+                <input id="ap-name" placeholder="e.g. Road Trip">
+            </div>
+        </div>
+        <div class="fg mt">
+            <label>Describe the vibe</label>
+            <textarea id="ap-desc" rows="2" placeholder="What kind of music belongs here?"></textarea>
+        </div>
+        <button class="btn-p" onclick="submitPlaylist()">Create</button>
+    </div>
+</section>
+
+<!-- Log activity -->
+<section>
+    <h2>Log Activity</h2>
+    <p class="muted" style="margin-bottom:8px">
+        Override your schedule for a specific time (e.g. "went for a run Sunday 6-9am").
+    </p>
+    <button onclick="tog('log-form')">+ Log activity</button>
+    <div id="log-form" class="hidden card mt">
+        <div class="row">
+            <div class="fg">
+                <label>Date</label>
+                <input type="date" id="al-date">
+            </div>
+            <div class="fg">
+                <label>Start</label>
+                <input type="time" id="al-start" value="06:00">
+            </div>
+            <div class="fg">
+                <label>End</label>
+                <input type="time" id="al-end" value="09:00">
+            </div>
+        </div>
+        <div class="fg">
+            <label>Playlist</label>
+            <select id="al-pl">
+                {% for p in playlists %}
+                <option value="{{ p.key }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="fg">
+            <label>Note (optional)</label>
+            <input id="al-note" placeholder="e.g. Sunday long run">
+        </div>
+        <button class="btn-p" onclick="submitLog()">Log</button>
+    </div>
+
+    {% if activity_log %}
+    <div class="mt">
+        {% for entry in activity_log | reverse %}
+        <div class="muted" style="margin-bottom:4px">
+            {{ entry.start }} &rarr; {{ entry.end }} &middot; {{ entry.playlist }}
+            {% if entry.note %} &middot; {{ entry.note }}{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Set date input to today
+document.getElementById('al-date').valueAsDate = new Date();
+
+function togDay(el) { el.classList.toggle('on'); }
+function tog(id) { document.getElementById(id).classList.toggle('hidden'); }
+function flash(text, type) {
+    const el = document.getElementById('msg');
+    el.innerHTML = `<div class="alert alert-${type}">${text}</div>`;
+    setTimeout(() => el.innerHTML = '', 4000);
+}
+
+function post(url, data) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    }).then(r => r.json());
+}
+
+function submitPlaylist() {
+    const name = document.getElementById('ap-name').value.trim();
+    const emoji = document.getElementById('ap-emoji').value.trim();
+    const desc = document.getElementById('ap-desc').value.trim();
+    if (!name || !desc) { flash('Name and description required.', 'err'); return; }
+    post('/api/playlist', { name, emoji, description: desc }).then(r => {
+        if (r.error) flash(r.error, 'err');
+        else location.reload();
+    });
+}
+
+function submitActivity() {
+    const name = document.getElementById('aa-name').value.trim();
+    const days = [...document.querySelectorAll('#aa-days .day.on')].map(d => d.dataset.d);
+    const start = document.getElementById('aa-start').value;
+    const end = document.getElementById('aa-end').value;
+    const playlist = document.getElementById('aa-pl').value;
+    if (!name || !days.length) { flash('Name and days are required.', 'err'); return; }
+    post('/api/activity', { name, days, windows: [{ start, end }], playlist }).then(r => {
+        if (r.error) flash(r.error, 'err');
+        else location.reload();
+    });
+}
+
+function submitLog() {
+    const date = document.getElementById('al-date').value;
+    const start = document.getElementById('al-start').value;
+    const end = document.getElementById('al-end').value;
+    const playlist = document.getElementById('al-pl').value;
+    const note = document.getElementById('al-note').value.trim();
+    if (!date || !start || !end || !playlist) { flash('All fields required.', 'err'); return; }
+    post('/api/log', { date, start, end, playlist, note }).then(r => {
+        if (r.error) flash(r.error, 'err');
+        else location.reload();
+    });
+}
+
+function doSync() {
+    const btn = document.getElementById('sync-btn');
+    const msgEl = document.getElementById('sync-msg');
+    const limit = document.getElementById('sync-lim').value;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Syncing...';
+    msgEl.innerHTML = '<span class="muted">Fetching history and categorizing songs...</span>';
+
+    post('/api/sync', { limit: parseInt(limit) || null });
+
+    const poll = setInterval(() => {
+        fetch('/api/sync/status').then(r => r.json()).then(d => {
+            if (!d.running) {
+                clearInterval(poll);
+                if (d.result?.status === 'error') {
+                    msgEl.innerHTML = `<div class="alert alert-err">${d.result.error}</div>`;
+                    btn.disabled = false;
+                    btn.textContent = 'Sync Now';
+                } else {
+                    location.reload();
+                }
+            }
+        });
+    }, 2000);
+}
+</script>
+{% endblock %}

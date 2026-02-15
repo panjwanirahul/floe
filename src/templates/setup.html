@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block title_suffix %} - Setup{% endblock %}
+
+{% block content %}
+<h1>Floe</h1>
+<p class="subtitle">Set up your automated playlist curator</p>
+
+<div id="msg"></div>
+
+<!-- Playlists -->
+<section>
+    <h2>Your Playlists</h2>
+    <p class="muted" style="margin-bottom:12px">
+        Create the playlists you want Floe to manage. Describe the vibe so the AI knows what songs belong.
+    </p>
+    <div id="playlists"></div>
+    <button class="btn-add" onclick="addPlaylist()">+ Add playlist</button>
+</section>
+
+<!-- Schedule -->
+<section>
+    <h2>Your Schedule</h2>
+    <p class="muted" style="margin-bottom:12px">
+        Map your routine so Floe can use listening time as context. Link each activity to a playlist.
+    </p>
+    <div id="activities"></div>
+    <button class="btn-add" onclick="addActivity()">+ Add activity</button>
+</section>
+
+<!-- Settings -->
+<section>
+    <h2>Settings</h2>
+    <div class="card">
+        <div class="row">
+            <div class="fg">
+                <label>Default playlist</label>
+                <select id="default-pl"><option value="">Add playlists first</option></select>
+                <span class="muted">Used when no schedule matches</span>
+            </div>
+            <div class="fg">
+                <label>Initial history scan</label>
+                <select id="scan-depth">
+                    <option value="50">Quick (~50 songs)</option>
+                    <option value="100" selected>Standard (~100 songs)</option>
+                    <option value="200">Deep (~200 songs)</option>
+                    <option value="0">Everything available</option>
+                </select>
+                <span class="muted">How far back to look on first sync</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<button class="btn-p" style="width:100%;padding:12px;font-size:0.95rem" id="save-btn" onclick="saveSetup()">
+    Save &amp; Create Playlists
+</button>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+const DAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+let plC = 0, acC = 0;
+
+// ── Playlists ──
+
+function addPlaylist() {
+    plC++;
+    const id = plC;
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.id = 'pl-' + id;
+    el.innerHTML = `
+        <div class="card-head">
+            <span class="muted">Playlist</span>
+            <button class="btn-g" onclick="removePl(${id})">&times;</button>
+        </div>
+        <div class="row mt">
+            <div style="max-width:72px">
+                <label>Emoji</label>
+                <input class="pl-e" placeholder="🎵" maxlength="4">
+            </div>
+            <div>
+                <label>Name</label>
+                <input class="pl-n" placeholder="e.g. Gym Energy">
+            </div>
+        </div>
+        <div class="fg mt">
+            <label>Describe the vibe</label>
+            <textarea class="pl-d" rows="2" placeholder="e.g. High energy, fast tempo, motivational tracks for intense workouts"></textarea>
+        </div>`;
+    document.getElementById('playlists').appendChild(el);
+    el.querySelector('.pl-n').addEventListener('input', updateDropdowns);
+    el.querySelector('.pl-e').addEventListener('input', updateDropdowns);
+}
+
+function removePl(id) {
+    document.getElementById('pl-' + id)?.remove();
+    updateDropdowns();
+}
+
+function getPlaylists() {
+    const out = [];
+    document.querySelectorAll('[id^="pl-"]').forEach(c => {
+        const name = c.querySelector('.pl-n').value.trim();
+        if (!name) return;
+        const emoji = c.querySelector('.pl-e').value.trim();
+        out.push({
+            name,
+            emoji,
+            label: emoji ? emoji + ' ' + name : name,
+            key: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+            description: c.querySelector('.pl-d').value.trim()
+        });
+    });
+    return out;
+}
+
+function updateDropdowns() {
+    const pls = getPlaylists();
+    document.querySelectorAll('.pl-dd').forEach(sel => {
+        const cur = sel.value;
+        sel.innerHTML = pls.map(p =>
+            `<option value="${p.key}"${p.key === cur ? ' selected' : ''}>${p.label}</option>`
+        ).join('');
+    });
+    const def = document.getElementById('default-pl');
+    const curDef = def.value;
+    def.innerHTML = pls.map(p =>
+        `<option value="${p.key}"${p.key === curDef ? ' selected' : ''}>${p.label}</option>`
+    ).join('');
+}
+
+// ── Activities ──
+
+function addActivity() {
+    acC++;
+    const id = acC;
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.id = 'act-' + id;
+    el.innerHTML = `
+        <div class="card-head">
+            <div class="fg" style="flex:1;margin-right:10px">
+                <label>Activity</label>
+                <input class="ac-n" placeholder="e.g. Gym, Commute, Work">
+            </div>
+            <button class="btn-g" onclick="removeAct(${id})">&times;</button>
+        </div>
+        <div class="fg">
+            <label>Days</label>
+            <div class="days">
+                ${DAYS.map((d,i) => `<div class="day" data-d="${d}" onclick="togDay(this)">${DAY_LABELS[i]}</div>`).join('')}
+                <div class="presets">
+                    <button class="pre" type="button" onclick="pickDays(${id},'wd')">Weekdays</button>
+                    <button class="pre" type="button" onclick="pickDays(${id},'all')">All</button>
+                </div>
+            </div>
+        </div>
+        <div class="fg">
+            <label>Time windows</label>
+            <div class="tws" id="tws-${id}">
+                <div class="tw">
+                    <input type="time" class="ts" value="09:00">
+                    <span>to</span>
+                    <input type="time" class="te" value="17:00">
+                </div>
+            </div>
+            <button class="btn-g mt" type="button" onclick="addTw(${id})">+ Add window</button>
+        </div>
+        <div class="fg">
+            <label>Playlist for this activity</label>
+            <select class="pl-dd ac-pl"></select>
+        </div>`;
+    document.getElementById('activities').appendChild(el);
+    updateDropdowns();
+}
+
+function removeAct(id) {
+    document.getElementById('act-' + id)?.remove();
+}
+
+function togDay(el) {
+    el.classList.toggle('on');
+}
+
+function pickDays(actId, mode) {
+    const card = document.getElementById('act-' + actId);
+    card.querySelectorAll('.day').forEach(d => {
+        if (mode === 'all') d.classList.add('on');
+        else if (mode === 'wd') {
+            const day = d.dataset.d;
+            d.classList.toggle('on', ['mon','tue','wed','thu','fri'].includes(day));
+        }
+    });
+}
+
+function addTw(actId) {
+    const cont = document.getElementById('tws-' + actId);
+    const tw = document.createElement('div');
+    tw.className = 'tw';
+    tw.innerHTML = `
+        <input type="time" class="ts" value="09:00">
+        <span>to</span>
+        <input type="time" class="te" value="17:00">
+        <button class="btn-g" onclick="this.parentElement.remove()">&times;</button>`;
+    cont.appendChild(tw);
+}
+
+// ── Save ──
+
+function saveSetup() {
+    const btn = document.getElementById('save-btn');
+    const msg = document.getElementById('msg');
+    msg.innerHTML = '';
+
+    const playlists = getPlaylists();
+    if (!playlists.length) {
+        msg.innerHTML = '<div class="alert alert-err">Add at least one playlist.</div>';
+        return;
+    }
+    for (const p of playlists) {
+        if (!p.description) {
+            msg.innerHTML = `<div class="alert alert-err">Please add a description for "${p.name}".</div>`;
+            return;
+        }
+    }
+
+    const activities = [];
+    document.querySelectorAll('[id^="act-"]').forEach(card => {
+        const name = card.querySelector('.ac-n').value.trim();
+        const days = [...card.querySelectorAll('.day.on')].map(d => d.dataset.d);
+        const windows = [...card.querySelectorAll('.tw')].map(tw => ({
+            start: tw.querySelector('.ts').value,
+            end: tw.querySelector('.te').value
+        }));
+        const playlist = card.querySelector('.ac-pl').value;
+        if (name && days.length && windows.length && playlist) {
+            activities.push({ name, days, windows, playlist });
+        }
+    });
+
+    const data = {
+        playlists,
+        activities,
+        default_playlist: document.getElementById('default-pl').value,
+        initial_scan_depth: parseInt(document.getElementById('scan-depth').value) || 0,
+    };
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating playlists...';
+
+    fetch('/api/setup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.error) {
+            msg.innerHTML = `<div class="alert alert-err">${res.error}</div>`;
+            btn.disabled = false;
+            btn.textContent = 'Save & Create Playlists';
+        } else {
+            window.location.href = '/dashboard';
+        }
+    })
+    .catch(() => {
+        msg.innerHTML = '<div class="alert alert-err">Something went wrong. Check the console.</div>';
+        btn.disabled = false;
+        btn.textContent = 'Save & Create Playlists';
+    });
+}
+
+// Start with one empty playlist
+addPlaylist();
+</script>
+{% endblock %}
